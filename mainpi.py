@@ -7,11 +7,14 @@ import pylab as plt
 import math
 import matplotlib
 from scipy.ndimage.filters import gaussian_filter
+#from picamera.array import PiRGBArray
+#from picamera import PiCamera
+import time
+import imutils
+from imutils.video import VideoStream
+from imutils.video import FPS
 
-INPUT_STREAM  = "kungfu.mp4"
-CPU_EXTENSION = "C:\\Program Files (x86)\\IntelSWTools\\openvino\\deployment_tools\\inference_engine\\bin\\intel64\\Release\\cpu_extension_avx2.dll"
-MODEL         = "C:\\Users\\gremi\\Documents\\Julien\\udacity_intel\\lesson4\\models\\human-pose-estimation-0001.xml"
-# if linux : /opt/intel/openvino/deployment_tools/inference_engine/lib/intel64/libcpu_extension_sse4.so"
+MODEL = "human-pose-estimation-0001.xml"
 
 COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0], [0, 255, 0], \
           [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255], [85, 0, 255], \
@@ -34,6 +37,9 @@ MID_NUM = 10
 STRIDE = 8
 PAD_VALUE = 128
 
+INPUT_WIDTH = 640
+INPUT_HEIGHT = 480
+
 def get_args():
     '''
     Gets the arguments from the command line.
@@ -54,8 +60,8 @@ def get_args():
     optional = parser.add_argument_group('optional arguments')
 
     # -- Create the arguments
-    optional.add_argument("-i", help=i_desc, default=INPUT_STREAM)
-    optional.add_argument("-d", help=d_desc, default='CPU')
+    optional.add_argument("-i", help=i_desc, default='')
+    optional.add_argument("-d", help=d_desc, default='MYRIAD')
     optional.add_argument("-t", help=t_desc, default=0.2)
     optional.add_argument("-c", help=c_desc, default="green")
     args = parser.parse_args()
@@ -319,35 +325,51 @@ def infer_on_video(args):
     Performs inference on video - main method
     '''
     ### Load the network model into the IE
-    print("Load the network model into the IE")
+    print("Load the network model into the IE with ", args.d)
     net = Network()
-    net.load_model(MODEL, "CPU", CPU_EXTENSION)
-
+    net.load_model(MODEL, args.d)
+    
     # Get and open video capture
-    cap = cv2.VideoCapture(args.i)
-    cap.open(args.i)
+    # initialize the camera and grab a reference to the raw camera capture
+    #camera = PiCamera()
+    #camera.resolution = (INPUT_WIDTH, INPUT_HEIGHT)
+    #camera.framerate = 32
+    #rawCapture = PiRGBArray(camera, size=(640, 480))
+    # allow the camera to warmup
+    #time.sleep(0.1)
 
-    # Grab the shape of the input 
-    width = int(cap.get(3))
-    height = int(cap.get(4))
+    print("[INFO] starting video stream...")
+    vs = VideoStream(usePiCamera=True).start()
+    time.sleep(2.0)
+    fps = FPS().start()
 
     # Create a video writer for the output video
     # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G')`
     # on Mac, and `0x00000021` on Linux
-    out = cv2.VideoWriter('out-' + INPUT_STREAM, 0x00000021, 30, (width,height))
+    out = cv2.VideoWriter('out-pi.mp4', 0x00000021, 30, (INPUT_WIDTH, INPUT_HEIGHT))
     
     # Process frames until the video ends, or process is exited
     frame_count = 0;
-    while cap.isOpened():
-        # Read the next frame
-        flag, frame = cap.read()
-        if not flag:
-            break
-        
+
+    # capture frames from the camera
+    # loop over the frames from the video stream
+    while True:
+        # grab the frame from the threaded video stream and resize it
+        # to have a maximum width of 400 pixels
+        frame = vs.read()
+        frame = imutils.resize(frame, width=INPUT_WIDTH)
+    #for capture in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+        # grab the raw NumPy array representing the image, then initialize the timestamp
+        # and occupied/unoccupied text
+        print("capture frame ", frame_count)
+        #frame = capture.array
+
         key_pressed = cv2.waitKey(60)
+
         imageToTest_padded, pad = padRightDownCorner(frame)
+        print("preprocessing frame ", frame_count)
         preprocessed_frame = preprocessing(imageToTest_padded, net.get_input_shape()[2], net.get_input_shape()[3])
-        #print("Perform inference on the frame")
+        print("Perform inference on the frame ", frame_count)
         net.async_inference(preprocessed_frame)
 
         heatmap = np.zeros((frame.shape[0], frame.shape[1], 19))
@@ -355,14 +377,18 @@ def infer_on_video(args):
         if net.wait() == 0:
             # Get the output of inference
             output_blobs = net.extract_output()
+            print("extract_outputs of the frame ", frame_count)
             heatmap, paf = extract_outputs(imageToTest_padded, frame, output_blobs, pad)
 
+        print("compute_peaks of the heatmap ", frame_count)
         all_peaks = compute_peaks(heatmap)
 
+        print("compute_connections of the paf ", frame_count)
         connection_all, special_k = compute_connections(all_peaks, frame, paf)
 
         candidate, subset = compute_subset(all_peaks, connection_all, special_k)
 
+        print("adding dots and sticks on the frame ", frame_count)
         cmap = matplotlib.cm.get_cmap('hsv')
         for i in range(18):
             rgba = np.array(cmap(1 - i/18. - 1./36))
@@ -374,22 +400,35 @@ def infer_on_video(args):
         frame = adding_sticks_to_frame(frame, subset, candidate)
 
         # Write a frame here for debug purpose
-        #cv2.imwrite("kungfu-frame" + str(frame_count) + ".png", frame)
+        #print("record frame" + str(frame_count))
+        #cv2.imwrite("frame" + str(frame_count) + ".png", frame)
      
         # Write out the frame in the video
-        out.write(frame)
+        #out.write(frame)
+        cv2.imshow("window name", frame)
 
         # frame count
         frame_count = frame_count + 1
-        
+        # update the FPS counter
+        fps.update()
+
+        # clear the stream in preparation for the next frame
+        #rawCapture.truncate(0)
+
         # Break if escape key pressed
         if key_pressed == 27:
             break
 
+    print("stop capture!")
     # Release the out writer, capture, and destroy any OpenCV windows
     out.release()
-    cap.release()
     cv2.destroyAllWindows()
+
+    # stop the timer and display FPS information
+    fps.stop()
+    print("[INFO] elasped time: {:.2f}".format(fps.elapsed()))
+    print("[INFO] approx. FPS: {:.2f}".format(fps.fps()))
+    vs.stop()
 
 
 def extract_outputs(imageToTest_padded, oriImg, output_blobs, pad):

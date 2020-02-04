@@ -68,6 +68,9 @@ class Network:
         self.exec_network.start_async(request_id=0, inputs={self.input_blob: image})
         return
 
+    def infer(self, input_blob, in1, in2, in3):
+        res = self.exec_network.infer(inputs={input_blob[0]: in1, input_blob[1]: in2, input_blob[2]: in3})
+        return res
 
     def wait(self):
         '''

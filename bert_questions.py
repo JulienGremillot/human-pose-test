@@ -47,28 +47,52 @@ def infer(args):
     net = IENetwork(model=MODEL_XML, weights=MODEL_BIN)
     net.batch_size = 1
 
-    # prepare input and output
-    input_blob = [i for i in net.inputs]
-    out_blob = [i for i in net.outputs]
+    exec_net = ie.load_network(network=net, device_name="CPU")
 
-    print('input:', input_blob)
+    out_blob = [i for i in net.outputs]
 
     input_ids = 'Placeholder'
     input_mask = 'Placeholder_1'
     input_segment_ids = 'Placeholder_2'
 
-    print('output:', out_blob)
+    # load questions from txt file
+    with open('questions.txt') as f:
+        questions = [v.strip() for v in f]
+        print('questions number:{}'.format(len(questions)))
 
-    sentences = ["Hello world!"]
-    feature = get_input_feature(sentences)
-    input_ids_blob = np.array(feature[0].input_ids).reshape((1, 128))
-    input_mask_blob = np.array(feature[0].input_mask).reshape((1, 128))
-    input_segment_ids_blob = np.array(feature[0].segment_ids).reshape((1, 128))
+    feature = get_input_feature(questions)
 
-    exec_net = ie.load_network(network=net, device_name="CPU")
-    res = exec_net.infer(inputs={input_ids: input_ids_blob, input_mask: input_mask_blob, input_segment_ids: input_segment_ids_blob})
-    print("res[", out_blob[0], "] = ", res[out_blob[0]])
-    #print("res[", out_blob[1], "].shape = ", res[out_blob[1]].shape)
+    vectors = []
+    for i in range(len(feature)):
+        input_ids_blob = np.array(feature[i].input_ids).reshape((1, 128))
+        input_mask_blob = np.array(feature[i].input_mask).reshape((1, 128))
+        input_segment_ids_blob = np.array(feature[i].segment_ids).reshape((1, 128))
+        res = exec_net.infer(
+            inputs={input_ids: input_ids_blob, input_mask: input_mask_blob, input_segment_ids: input_segment_ids_blob})
+        vectors.append(res[out_blob[1]])
+
+    vectors = np.array(vectors)
+    vectors = vectors.reshape((vectors.shape[0], vectors.shape[-1]))
+
+    # type question and search it with 5 most similar in stored question file.
+    topk = 5
+    while True:
+        query_sentence = input('your questions: ')
+        query_list = []
+        query_list.append(query_sentence.strip())
+        feature = get_input_feature(query_list)
+        input_ids_blob = np.array(feature[0].input_ids).reshape((1, 128))
+        input_mask_blob = np.array(feature[0].input_mask).reshape((1, 128))
+        input_segment_ids_blob = np.array(feature[0].segment_ids).reshape((1, 128))
+        res = exec_net.infer(inputs={input_ids: input_ids_blob, input_mask: input_mask_blob, input_segment_ids: input_segment_ids_blob})
+        query_vec = res[out_blob[1]]
+
+        # compute normalized dot product as score
+        score = np.sum(query_vec * vectors, axis=1) / np.linalg.norm(vectors, axis=1)
+        topk_idx = np.argsort(score)[::-1][:topk]
+        print('top %d questions similar to "%s"' % (topk, query_sentence))
+        for idx in topk_idx:
+            print('> %s\t%s' % ('%.1f' % score[idx], questions[idx]))
 
 def main():
     print("Starting")

@@ -3,7 +3,8 @@ import os
 import cv2
 from openvino.inference_engine import IENetwork, IECore
 
-INPUT_STREAM  = "vids\\vid4.mp4"
+INPUT_STREAM  = "vids\\vid4.mp4" #"/home/workspace/pet_videos/"
+#CPU_EXTENSION = "/opt/intel/openvino/deployment_tools/inference_engine/lib/intel64/libcpu_extension_avx2.so"
 CPU_EXTENSION = "C:\\Program Files (x86)\\IntelSWTools\\openvino\\deployment_tools\\inference_engine\\bin\\intel64\\Release\\cpu_extension_avx2.dll"
 
 # To keep track of this model origin :
@@ -22,6 +23,8 @@ CPU_EXTENSION = "C:\\Program Files (x86)\\IntelSWTools\\openvino\\deployment_too
 #     --data_type FP16
 
 MODEL  = "frozen_inference_graph.xml"
+#MODEL  = "/home/workspace/models/frozen_inference_graph.xml"
+
 # This is from https://github.com/tensorflow/models/blob/master/research/object_detection/data/mscoco_label_map.pbtxt
 # I converted it to a simple array, with index corresponding to the index used by the model (some missing indexes)
 LABELS = [ "", "person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light",\
@@ -33,12 +36,18 @@ LABELS = [ "", "person","bicycle","car","motorcycle","airplane","bus","train","t
            "mouse","remote","keyboard","cell phone","microwave","oven","toaster","sink","refrigerator","","book","clock",\
            "vase","scissors","teddy bear","hair drier","toothbrush" ]
 
+# indexes of searched items
+CAT_IDX   = 17
+TABLE_IDX = 67
+
 COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0], [0, 255, 0], \
           [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255], [85, 0, 255], \
           [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 # confidence for detected bounding boxes
-CONFIDENCE = 0.8
+CONFIDENCE = 0.1
+
+startbox = None
 
 def get_args():
     '''
@@ -83,7 +92,7 @@ def add_text_to_bounding_box(image, text, x_min, y_min, color):
     image = cv2.putText(image, text, (x_min + 5, y_min - labelSize[0][1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 1)
     return image
 
-def create_output_image(image, output, width, height, color):
+def create_output_image(image, output, tracker, width, height, color):
     '''
     Using the model type, input image, and processed output,
     creates an output image showing the result of inference.
@@ -99,12 +108,23 @@ def create_output_image(image, output, width, height, color):
     thickness = 1 # in pixels
     for bounding_box in output[0][0]:
         conf = bounding_box[2]
-        if conf >= CONFIDENCE:
+        if conf >= CONFIDENCE and CAT_IDX == int(bounding_box[1]):
+        #if conf >= CONFIDENCE:
             x_min = int(bounding_box[3] * width)
             y_min = int(bounding_box[4] * height)
             x_max = int(bounding_box[5] * width)
             y_max = int(bounding_box[6] * height)
+            # tracking tests
+            if startbox is None:
+                tracker.init(image, (x_min, y_min, x_max - x_min, y_max - y_min))
+            else:
+                (success, box) = tracker.update(image)
+                if success:
+                    (x, y, w, h) = [int(v) for v in box]
+                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # anyway
             cv2.rectangle(image, (x_min, y_min), (x_max, y_max), color, thickness)
+            #print("LABELS[",bounding_box[1],"]=",LABELS[int(bounding_box[1])], " => confidence=", conf)
             image = add_text_to_bounding_box(image, LABELS[int(bounding_box[1])], x_min, y_min, color)
     return image
 
@@ -133,10 +153,16 @@ def infer_on_video(args):
     # Create a video writer for the output video
     # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G')`
     # on Mac, and `0x00000021` on Linux
-    out = cv2.VideoWriter('out-cat.mp4', 0x00000021, 30, (width,height))
+    # fourcc = cv2.VideoWriter_fourcc(*'x264')
+    out = cv2.VideoWriter("output-track-cat4.mp4", 0x00000021, 30, (width,height))
+    #out = cv2.VideoWriter("output-" + str(args.i.rsplit('/', 1)[-1]), 0x7634706d, 30, (width,height))
     
     # Process frames until the video ends, or process is exited
     frame_count = 0;
+
+    # init cv2 tracker
+    tracker = cv2.TrackerMIL_create()
+
     while cap.isOpened():
         # Read the next frame
         flag, frame = cap.read()
@@ -151,7 +177,7 @@ def infer_on_video(args):
         if exec_network.requests[0].wait(-1) == 0:
             # Get the output of inference
             output = exec_network.requests[0].outputs
-            frame = create_output_image(frame, output['DetectionOutput'], width, height, (0, 0, 255))
+            frame = create_output_image(frame, output['DetectionOutput'], tracker, width, height, (0, 0, 255))
 
         # Write a frame here for debug purpose
         #cv2.imwrite("frame" + str(frame_count) + ".png", frame)
@@ -173,6 +199,7 @@ def infer_on_video(args):
 
 def main():
     print("Starting")
+    print("OpenCV version :  {0}".format(cv2.__version__))
     args = get_args()
     infer_on_video(args)
 

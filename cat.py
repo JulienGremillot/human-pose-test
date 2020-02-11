@@ -1,9 +1,14 @@
 import argparse
 import os
 import cv2
-from openvino.inference_engine import IENetwork, IECore
+from openvino.inference_engine import IENetwork, IECore, np
 
 INPUT_STREAM  = "vids\\vid4.mp4" #"/home/workspace/pet_videos/"
+
+# set of (x,y) points defining the forbidden zone - for vid4.mp4
+FORBIDDEN_ZONE = np.array([[950,210], [370,340], [355,500],  [540,570], [920,450], [1270,710], [1270,390]], np.int32)
+FORBIDDEN_ZONE = FORBIDDEN_ZONE.reshape((-1,1,2))
+
 #CPU_EXTENSION = "/opt/intel/openvino/deployment_tools/inference_engine/lib/intel64/libcpu_extension_avx2.so"
 CPU_EXTENSION = "C:\\Program Files (x86)\\IntelSWTools\\openvino\\deployment_tools\\inference_engine\\bin\\intel64\\Release\\cpu_extension_avx2.dll"
 
@@ -92,7 +97,7 @@ def add_text_to_bounding_box(image, text, x_min, y_min, color):
     image = cv2.putText(image, text, (x_min + 5, y_min - labelSize[0][1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 1)
     return image
 
-def create_output_image(image, output, tracker, width, height, color):
+def create_output_image(image, output, width, height):
     '''
     Using the model type, input image, and processed output,
     creates an output image showing the result of inference.
@@ -109,20 +114,17 @@ def create_output_image(image, output, tracker, width, height, color):
     for bounding_box in output[0][0]:
         conf = bounding_box[2]
         if conf >= CONFIDENCE and CAT_IDX == int(bounding_box[1]):
-        #if conf >= CONFIDENCE:
             x_min = int(bounding_box[3] * width)
             y_min = int(bounding_box[4] * height)
             x_max = int(bounding_box[5] * width)
             y_max = int(bounding_box[6] * height)
-            # tracking tests
-            if startbox is None:
-                tracker.init(image, (x_min, y_min, x_max - x_min, y_max - y_min))
+            # calculation of the center of the bounding box
+            center = ((x_min + x_max) / 2, (y_min + y_max) / 2)
+            # choose color : red if center inside forbidden zone, green if outside
+            if cv2.pointPolygonTest(FORBIDDEN_ZONE, center, False) > 0:
+                color = (0,0,255) #red
             else:
-                (success, box) = tracker.update(image)
-                if success:
-                    (x, y, w, h) = [int(v) for v in box]
-                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            # anyway
+                color = (0,255,0) #green
             cv2.rectangle(image, (x_min, y_min), (x_max, y_max), color, thickness)
             #print("LABELS[",bounding_box[1],"]=",LABELS[int(bounding_box[1])], " => confidence=", conf)
             image = add_text_to_bounding_box(image, LABELS[int(bounding_box[1])], x_min, y_min, color)
@@ -154,14 +156,11 @@ def infer_on_video(args):
     # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G')`
     # on Mac, and `0x00000021` on Linux
     # fourcc = cv2.VideoWriter_fourcc(*'x264')
-    out = cv2.VideoWriter("output-track-cat4.mp4", 0x00000021, 30, (width,height))
+    out = cv2.VideoWriter("output-zone2-cat4.mp4", 0x00000021, 30, (width,height))
     #out = cv2.VideoWriter("output-" + str(args.i.rsplit('/', 1)[-1]), 0x7634706d, 30, (width,height))
     
     # Process frames until the video ends, or process is exited
     frame_count = 0;
-
-    # init cv2 tracker
-    tracker = cv2.TrackerMIL_create()
 
     while cap.isOpened():
         # Read the next frame
@@ -177,7 +176,8 @@ def infer_on_video(args):
         if exec_network.requests[0].wait(-1) == 0:
             # Get the output of inference
             output = exec_network.requests[0].outputs
-            frame = create_output_image(frame, output['DetectionOutput'], tracker, width, height, (0, 0, 255))
+            cv2.polylines(frame, [FORBIDDEN_ZONE], True, (0, 0, 255))
+            frame = create_output_image(frame, output['DetectionOutput'], width, height)
 
         # Write a frame here for debug purpose
         #cv2.imwrite("frame" + str(frame_count) + ".png", frame)

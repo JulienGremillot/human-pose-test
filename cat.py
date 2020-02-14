@@ -3,10 +3,12 @@ import os
 import cv2
 from openvino.inference_engine import IENetwork, IECore, np
 
-INPUT_STREAM  = "vids\\vid4.mp4" #"/home/workspace/pet_videos/"
+INPUT_STREAM  = "vids\\vid7.mp4" #"/home/workspace/pet_videos/"
 
 # set of (x,y) points defining the forbidden zone - for vid4.mp4
-FORBIDDEN_ZONE = np.array([[950,210], [370,340], [355,500],  [540,570], [920,450], [1270,710], [1270,390]], np.int32)
+# FORBIDDEN_ZONE = np.array([[950,210], [370,340], [355,500],  [540,570], [920,450], [1270,710], [1270,390]], np.int32)
+# set of (x,y) points defining the forbidden zone - for vid7.mp4
+FORBIDDEN_ZONE = np.array([[0,100], [470,160], [260,350],  [0,290]], np.int32)
 FORBIDDEN_ZONE = FORBIDDEN_ZONE.reshape((-1,1,2))
 
 #CPU_EXTENSION = "/opt/intel/openvino/deployment_tools/inference_engine/lib/intel64/libcpu_extension_avx2.so"
@@ -30,27 +32,11 @@ CPU_EXTENSION = "C:\\Program Files (x86)\\IntelSWTools\\openvino\\deployment_too
 MODEL  = "frozen_inference_graph.xml"
 #MODEL  = "/home/workspace/models/frozen_inference_graph.xml"
 
-# This is from https://github.com/tensorflow/models/blob/master/research/object_detection/data/mscoco_label_map.pbtxt
-# I converted it to a simple array, with index corresponding to the index used by the model (some missing indexes)
-LABELS = [ "", "person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light",\
-           "fire hydrant","", "stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow","elephant",\
-           "bear","zebra","giraffe","","backpack","umbrella","","","handbag","tie","suitcase","frisbee","skis","snowboard",\
-           "sports ball","kite","baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle","",\
-           "wine glass","cup","fork","knife","spoon","bowl","banana","apple","sandwich","orange","broccoli","carrot",\
-           "hot dog","pizza","donut","cake","chair","couch","potted plant","bed","","dining table","","","toilet","","tv","laptop",\
-           "mouse","remote","keyboard","cell phone","microwave","oven","toaster","sink","refrigerator","","book","clock",\
-           "vase","scissors","teddy bear","hair drier","toothbrush" ]
-
 # indexes of searched items
 CAT_IDX   = 17
-TABLE_IDX = 67
-
-COLORS = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0], [0, 255, 0], \
-          [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255], [85, 0, 255], \
-          [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85]]
 
 # confidence for detected bounding boxes
-CONFIDENCE = 0.1
+CONFIDENCE = 0.5
 
 startbox = None
 
@@ -62,6 +48,7 @@ def get_args():
     # -- Create the descriptions for the commands
     i_desc = "The location of the input file"
     d_desc = "The device name, if not 'CPU'"
+    s_desc = "Show forbidden zone"
 
     parser._action_groups.pop()
     optional = parser.add_argument_group('optional arguments')
@@ -69,6 +56,7 @@ def get_args():
     # -- Create the arguments
     optional.add_argument("-i", help=i_desc, default=INPUT_STREAM)
     optional.add_argument("-d", help=d_desc, default='CPU')
+    optional.add_argument("-s", help=s_desc, default=False)
     args = parser.parse_args()
 
     return args
@@ -121,13 +109,13 @@ def create_output_image(image, output, width, height):
             # calculation of the center of the bounding box
             center = ((x_min + x_max) / 2, (y_min + y_max) / 2)
             # choose color : red if center inside forbidden zone, green if outside
+            color = (0, 255, 0)  # green
+            label = 'good cat'
             if cv2.pointPolygonTest(FORBIDDEN_ZONE, center, False) > 0:
                 color = (0,0,255) #red
-            else:
-                color = (0,255,0) #green
+                label = 'bad cat'
             cv2.rectangle(image, (x_min, y_min), (x_max, y_max), color, thickness)
-            #print("LABELS[",bounding_box[1],"]=",LABELS[int(bounding_box[1])], " => confidence=", conf)
-            image = add_text_to_bounding_box(image, LABELS[int(bounding_box[1])], x_min, y_min, color)
+            image = add_text_to_bounding_box(image, label, x_min, y_min, color)
     return image
 
 def infer_on_video(args):
@@ -156,7 +144,7 @@ def infer_on_video(args):
     # The second argument should be `cv2.VideoWriter_fourcc('M','J','P','G')`
     # on Mac, and `0x00000021` on Linux
     # fourcc = cv2.VideoWriter_fourcc(*'x264')
-    out = cv2.VideoWriter("output-zone2-cat4.mp4", 0x00000021, 30, (width,height))
+    out = cv2.VideoWriter("output-zone-cat7.mp4", 0x00000021, 30, (width,height))
     #out = cv2.VideoWriter("output-" + str(args.i.rsplit('/', 1)[-1]), 0x7634706d, 30, (width,height))
     
     # Process frames until the video ends, or process is exited
@@ -176,7 +164,9 @@ def infer_on_video(args):
         if exec_network.requests[0].wait(-1) == 0:
             # Get the output of inference
             output = exec_network.requests[0].outputs
-            cv2.polylines(frame, [FORBIDDEN_ZONE], True, (0, 0, 255))
+            # Show the forbidden zone if -s argument is True
+            if args.s:
+                cv2.polylines(frame, [FORBIDDEN_ZONE], True, (255, 0, 0))
             frame = create_output_image(frame, output['DetectionOutput'], width, height)
 
         # Write a frame here for debug purpose

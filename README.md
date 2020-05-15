@@ -41,6 +41,11 @@ A lot of stuff is hardcoded in this script :
 - the coordinates of the "forbidden zone" describing the zone where the cat should not go
 - the confidence threshold for the model detections
 
+### Output examples
+
+![](resources/goodcat.png?raw=true)
+![](resources/badcat.png?raw=true)
+
 ### Model used
 
 The model used (and **not** included in this repository) is a OpenVino IR converted from the [ssdlite_mobilenet_v2_coco](http://download.tensorflow.org/models/object_detection/ssdlite_mobilenet_v2_coco_2018_05_09.tar.gz) of the Tensorflow [model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/detection_model_zoo.md).

@@ -55,3 +55,9 @@ Conversion was made with the following command :
 python mo_tf.py --input_model ssdlite_mobilenet_v2_coco\frozen_inference_graph.pb --tensorflow_use_custom_operations_config extensions\front\tf\ssd_v2_support.json --tensorflow_object_detection_api_pipeline_config ssd_mobilenet_v2_coco.config --data_type FP16
 ```
 
+## Licence
+
+These scripts are my work for personnal testing of various models. They are based on course content from Udacity "Intel Edge AI Scholarship Foundation Course".
+
+The [tokenisation.py](tokenisation.py) and [input_feature.py](input_feature.py) scripts I used for my BERT tests are works from the Google AI Language Team and licensed under the Apache License, Version 2.0 (the "License");
+

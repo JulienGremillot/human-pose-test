@@ -46,9 +46,11 @@ More information [here](https://docs.openvinotoolkit.org/2019_R1/_emotions_recog
 
 The script [bert.py](bert.py) is my test playing with similar questions recognition with BERT.
 
-BERT (Bidirectional Encoder Representations from Transformers) provides dense vector representations for natural language by using a deep, pre-trained neural network with the Transformer architecture. It was originally published by Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova: "[BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)", 2018.
+The script [bert_questions.py](bert_questions.py) takes the file [questions.txt](questions.txt) for reference and asks the user to input a new question. It tries to find the 5 most similar questions in its reference file.
 
 ### Model used
+
+BERT (Bidirectional Encoder Representations from Transformers) provides dense vector representations for natural language by using a deep, pre-trained neural network with the Transformer architecture. It was originally published by Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova: "[BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)", 2018.
 
 I based my tests on the "multilingual_L-12_H-768_A-12" model that I found on the [Google Research Github page](https://github.com/google-research/bert/blob/master/multilingual.md).
 

@@ -50,9 +50,12 @@ class Network:
         # Get the input layer
         self.input_blob = next(iter(self.network.inputs))
         self.output_blob = next(iter(self.network.outputs))
+        #print("output_blob:", self.output_blob)
 
         return
 
+    def layers(self):
+        return self.network.layers
 
     def get_input_shape(self):
         '''

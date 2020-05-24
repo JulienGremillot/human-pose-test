@@ -92,6 +92,7 @@ class YoloParams:
 
     def log_params(self):
         params_to_print = {'classes': self.classes, 'num': self.num, 'coords': self.coords, 'anchors': self.anchors}
+        print("params_to_print:", params_to_print)
         #[log.info("         {:8}: {}".format(param_name, param)) for param_name, param in params_to_print.items()]
 
 
@@ -130,6 +131,9 @@ def parse_yolo_region(blob, resized_image_shape, original_im_shape, params, thre
         col = i % params.side
         for n in range(params.num):
             obj_index = entry_index(params.side, params.coords, params.classes, n * side_square + i, params.coords)
+            if (obj_index >= len(predictions)):
+                #print("obj_index=", obj_index, " len(predictions)=", len(predictions))
+                continue
             scale = predictions[obj_index]
             # => IndexError: index 55625 is out of bounds for axis 0 with size 6450
             if scale < threshold:
@@ -151,6 +155,9 @@ def parse_yolo_region(blob, resized_image_shape, original_im_shape, params, thre
             for j in range(params.classes):
                 class_index = entry_index(params.side, params.coords, params.classes, n * side_square + i,
                                           params.coords + 1 + j)
+                if (class_index >= len(predictions)):
+                    #print("class_index=", class_index, " len(predictions)=", len(predictions))
+                    continue
                 confidence = scale * predictions[class_index]
                 if confidence < threshold:
                     continue
@@ -237,9 +244,22 @@ def infer_on_video(args):
             # output_blobs['ActionNet/out_detection_conf'][0][1]: [0.9218075  0.07819249]
 
             for layer_name, out_blob in output_blobs.items():
+                print("out_blob.shape:", out_blob.shape)
+                print("layer_name:", layer_name)
+                #print("net.layers()[layer_name]:", net.layers()[layer_name])
+                #print('net.layers()[net.layers()[layer_name].parents[0]].shape:',net.layers()[net.layers()[layer_name].parents[0]].shape)
                 #out_blob = out_blob.reshape(net.layers()[net.layers()[layer_name].parents[0]].shape)
                 # => cannot reshape array of size 6450 into shape (1,128,25,43) /// 128*25*43=137600
-                out_blob = out_blob.reshape(1,6,25,43)
+                #if out_blob.size != 6450:
+                    #print("not ok, continue")
+                    #continue
+                if 'out_head_1_anchor' in layer_name:
+                    out_blob = out_blob.reshape(1, 6, 50, 85)
+                else:
+                    if 'out_head_2_anchor' in layer_name:
+                        out_blob = out_blob.reshape(1,6,25,43)
+                    else:
+                        continue
 
                 layer_params = YoloParams(net.layers()[layer_name].params, out_blob.shape[2])
                 #log.info("Layer {} parameters: ".format(layer_name))
@@ -247,6 +267,23 @@ def infer_on_video(args):
                 objects += parse_yolo_region(out_blob, preprocessed_frame.shape[2:],
                                              frame.shape[:-1], layer_params,
                                              THRESHOLD)
+
+                print("objects:", objects)
+                # Filtering overlapping boxes with respect to the THRESHOLD
+                objects = sorted(objects, key=lambda obj: obj['confidence'], reverse=True)
+                for i in range(len(objects)):
+                    if objects[i]['confidence'] == 0:
+                        continue
+                    for j in range(i + 1, len(objects)):
+                        if intersection_over_union(objects[i], objects[j]) > THRESHOLD:
+                            objects[j]['confidence'] = 0
+
+                # Drawing objects with respect to the THRESHOLD
+                objects = [obj for obj in objects if obj['confidence'] >= THRESHOLD]
+
+                if len(objects):
+                    print("\nDetected boxes for batch {}:".format(1))
+                    print(" Class ID | Confidence | XMIN | YMIN | XMAX | YMAX | COLOR ")
 
         # Write a frame here for debug purpose
         cv2.imwrite("classroom-frame" + str(frame_count) + ".png", frame)

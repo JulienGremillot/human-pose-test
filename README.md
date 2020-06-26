@@ -80,6 +80,11 @@ Conversion was made with the following command :
 python mo_tf.py --input_model ssdlite_mobilenet_v2_coco\frozen_inference_graph.pb --tensorflow_use_custom_operations_config extensions\front\tf\ssd_v2_support.json --tensorflow_object_detection_api_pipeline_config ssd_mobilenet_v2_coco.config --data_type FP16
 ```
 
+## Performance counts
+
+The script [perf_counts.py](perf_counts.py) is just a quick & simple example of running the method `get_perf_counts()` on an inference request using the OpenVino framework.
+This is a very nice diagnostic tool and I'm glad to have discovered it.
+
 ## Licence
 
 These scripts are my work for personnal testing of various models. They are based on course content from Udacity "Intel Edge AI Scholarship Foundation Course".
